@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Build and commit dist
 
 on:
   push:
@@ -6,12 +6,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: 'pages'
+  group: 'build'
   cancel-in-progress: true
 
 jobs:
@@ -32,29 +30,12 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-        with:
-          enablement: true
-
-      - name: Ensure Pages uses GitHub Actions
-        run: gh api --method PUT /repos/${{ github.repository }}/pages -f build_type=workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-        continue-on-error: true
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: './dist'
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Commit and push dist
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dist
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update dist [skip ci]"
+            git push
+          fi
