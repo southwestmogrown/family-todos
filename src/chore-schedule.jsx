@@ -1,4 +1,52 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+
+const CHORE_COMPLETED_KEY = "chore_completed";
+const CHORE_OLIVER_POINTS_KEY = "chore_oliver_points";
+const CHORE_WEEK_KEY = "chore_week";
+
+/** Returns the ISO date string (YYYY-MM-DD) for the most recent Sunday in Central Time (CST/CDT). */
+function getWeekKeyCST() {
+  const now = new Date();
+  // Get the current date components in America/Chicago (handles CST/CDT automatically)
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  }).formatToParts(now);
+  const year  = parseInt(parts.find(p => p.type === "year").value, 10);
+  const month = parseInt(parts.find(p => p.type === "month").value, 10) - 1;
+  const day   = parseInt(parts.find(p => p.type === "day").value, 10);
+  // Find the most recent Sunday (weekday 0) in Central Time
+  const weekday = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(
+    parts.find(p => p.type === "weekday").value
+  );
+  const sundayDate = new Date(Date.UTC(year, month, day - weekday, 12));
+  const sy = sundayDate.getUTCFullYear();
+  const sm = String(sundayDate.getUTCMonth() + 1).padStart(2, "0");
+  const sd = String(sundayDate.getUTCDate()).padStart(2, "0");
+  return `${sy}-${sm}-${sd}`;
+}
+
+/** Loads persisted chore state, resetting it when a new week (Sunday CST) has begun. */
+function loadChoreState() {
+  try {
+    const currentWeek = getWeekKeyCST();
+    const storedWeek = localStorage.getItem(CHORE_WEEK_KEY);
+    if (storedWeek !== currentWeek) {
+      localStorage.removeItem(CHORE_COMPLETED_KEY);
+      localStorage.removeItem(CHORE_OLIVER_POINTS_KEY);
+      localStorage.setItem(CHORE_WEEK_KEY, currentWeek);
+      return { completed: {}, oliverPoints: 0 };
+    }
+    const completed = JSON.parse(localStorage.getItem(CHORE_COMPLETED_KEY) || "{}");
+    const oliverPoints = parseInt(localStorage.getItem(CHORE_OLIVER_POINTS_KEY) || "0", 10);
+    return { completed, oliverPoints };
+  } catch {
+    return { completed: {}, oliverPoints: 0 };
+  }
+}
 
 const MEMBERS = [
   { id: "dad",     name: "Dad",     emoji: "🦾", color: "#4a90d9", bg: "#1a2a3e" },
@@ -112,12 +160,27 @@ function Burst({ bursts }) {
 }
 
 export default function ChoreChart() {
+  // Load persisted state once per mount (not twice) via a ref cache
+  const initRef = useRef(undefined);
+  const getInit = () => {
+    if (initRef.current === undefined) initRef.current = loadChoreState();
+    return initRef.current;
+  };
+
   const [activeMember, setActiveMember] = useState("oliver");
   const [view, setView] = useState("daily");
-  const [completed, setCompleted] = useState({});
-  const [oliverPoints, setOliverPoints] = useState(0);
+  const [completed, setCompleted] = useState(() => getInit().completed);
+  const [oliverPoints, setOliverPoints] = useState(() => getInit().oliverPoints);
   const [bursts, setBursts] = useState([]);
   const [confetti, setConfetti] = useState(false);
+
+  useEffect(() => {
+    try { localStorage.setItem(CHORE_COMPLETED_KEY, JSON.stringify(completed)); } catch {}
+  }, [completed]);
+
+  useEffect(() => {
+    try { localStorage.setItem(CHORE_OLIVER_POINTS_KEY, String(oliverPoints)); } catch {}
+  }, [oliverPoints]);
 
   const member = MEMBERS.find(m => m.id === activeMember);
   const chores = CHORES[activeMember];
@@ -325,7 +388,7 @@ export default function ChoreChart() {
         )}
 
         <div style={{textAlign:"center", padding:"22px 0 8px", fontSize:11, color:"#2e2848", letterSpacing:2, textTransform:"uppercase"}}>
-          Tap a chore to mark it done · Points reset each session
+          Tap a chore to mark it done · Resets every Sunday
         </div>
       </div>
     </div>
